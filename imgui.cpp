@@ -1385,7 +1385,7 @@ static void             UpdateDebugToolFlashStyleColor();
 
 // Inputs
 static void             UpdateKeyboardInputs();
-static void             UpdateMouseInputs();
+static void             UpdateMouseInputs(ImGuiContext& gtx);
 static void             UpdateMouseWheel();
 static void             UpdateKeyRoutingTable(ImGuiKeyRoutingTable* rt);
 
@@ -1754,12 +1754,11 @@ void ImGuiIO::ClearEventsQueue()
 // Clear current keyboard/gamepad state + current frame text input buffer. Equivalent to releasing all keys/buttons.
 void ImGuiIO::ClearInputKeys()
 {
-    ImGuiContext& g = *Ctx;
     for (int key = ImGuiKey_NamedKey_BEGIN; key < ImGuiKey_NamedKey_END; key++)
     {
         if (ImGui::IsMouseKey((ImGuiKey)key))
             continue;
-        ImGuiKeyData* key_data = &g.IO.KeysData[key - ImGuiKey_NamedKey_BEGIN];
+        ImGuiKeyData* key_data = &KeysData[key - ImGuiKey_NamedKey_BEGIN];
         key_data->Down = false;
         key_data->DownDuration = -1.0f;
         key_data->DownDurationPrev = -1.0f;
@@ -5412,6 +5411,7 @@ void ImGui::UpdateHoveredWindowAndCaptureFlags(const ImVec2& mouse_pos)
     {
         if (io.MouseClicked[i])
         {
+            auto temp_debugger_value_inspector = g.HoveredWindow != NULL;
             io.MouseDownOwned[i] = (g.HoveredWindow != NULL) || has_open_popup;
             io.MouseDownOwnedUnlessPopupClose[i] = (g.HoveredWindow != NULL) || has_open_modal;
         }
@@ -5659,7 +5659,7 @@ void ImGui::NewFrame()
     NavUpdate();
 
     // Update mouse input state
-    UpdateMouseInputs();
+    UpdateMouseInputs(g);
 
     // Mark all windows as not visible and compact unused memory.
     IM_ASSERT(g.WindowsFocusOrder.Size <= g.Windows.Size);
@@ -10154,9 +10154,8 @@ static void ImGui::UpdateKeyboardInputs()
     UpdateKeyRoutingTable(&g.KeysRoutingTable);
 }
 
-static void ImGui::UpdateMouseInputs()
+static void ImGui::UpdateMouseInputs(ImGuiContext& g)
 {
-    ImGuiContext& g = *GImGui;
     ImGuiIO& io = g.IO;
 
     // Mouse Wheel swapping flag

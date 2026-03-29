@@ -24,6 +24,7 @@
 
 #pragma once
 #include "imgui.h"      // IMGUI_IMPL_API
+#include "imgui_internal.h"
 #ifndef IMGUI_DISABLE
 
 struct GLFWwindow;
@@ -61,6 +62,17 @@ IMGUI_IMPL_API void     ImGui_ImplGlfw_ScrollCallback(GLFWwindow* window, double
 IMGUI_IMPL_API void     ImGui_ImplGlfw_KeyCallback(GLFWwindow* window, int key, int scancode, int action, int mods);
 IMGUI_IMPL_API void     ImGui_ImplGlfw_CharCallback(GLFWwindow* window, unsigned int c);
 IMGUI_IMPL_API void     ImGui_ImplGlfw_MonitorCallback(GLFWmonitor* monitor, int event);
+
+
+IMGUI_IMPL_API void     ImGui_ImplGlfw_WindowFocusCallback_Context(ImGuiContext* context, GLFWwindow* window, int focused);        // Since 1.84
+IMGUI_IMPL_API void     ImGui_ImplGlfw_CursorEnterCallback_Context(ImGuiContext* context, GLFWwindow* window, int entered);        // Since 1.84
+IMGUI_IMPL_API void     ImGui_ImplGlfw_CursorPosCallback_Context(ImGuiContext* context, GLFWwindow* window, double x, double y);   // Since 1.87
+IMGUI_IMPL_API void     ImGui_ImplGlfw_MouseButtonCallback_Context(ImGuiContext* context, GLFWwindow* window, int button, int action, int mods);
+IMGUI_IMPL_API void     ImGui_ImplGlfw_ScrollCallback_Context(ImGuiContext* context, GLFWwindow* window, double xoffset, double yoffset);
+IMGUI_IMPL_API void     ImGui_ImplGlfw_KeyCallback_Context(ImGuiContext* context, GLFWwindow* window, int key, int scancode, int action, int mods);
+IMGUI_IMPL_API void     ImGui_ImplGlfw_CharCallback_Context(ImGuiContext* context, GLFWwindow* window, unsigned int c);
+IMGUI_IMPL_API void     ImGui_ImplGlfw_MonitorCallback_Context(ImGuiContext* context, GLFWmonitor* monitor, int event);
+IMGUI_IMPL_API void     ImGui_ImplGlfw_KeyCallback_Context(ImGuiContext* context, GLFWwindow* window, int keycode, int scancode, int action, int mods);
 
 // GLFW helpers
 IMGUI_IMPL_API void     ImGui_ImplGlfw_Sleep(int milliseconds);
