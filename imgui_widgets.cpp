@@ -575,20 +575,20 @@ bool ImGui::ButtonBehavior(const ImRect& bb, ImGuiID id, bool* out_hovered, bool
 
     // Special mode for Drag and Drop used by openables (tree nodes, tabs etc.)
     // where holding the button pressed for a long time while drag a payload item triggers the button.
-    if (g.DragDropActive)
+    if (dd_ctx->DragDropActive)
     {
-        if ((flags & ImGuiButtonFlags_PressedOnDragDropHold) && !(g.DragDropSourceFlags & ImGuiDragDropFlags_SourceNoHoldToOpenOthers) && IsItemHovered(ImGuiHoveredFlags_AllowWhenBlockedByActiveItem))
+        if ((flags & ImGuiButtonFlags_PressedOnDragDropHold) && !(dd_ctx->DragDropSourceFlags & ImGuiDragDropFlags_SourceNoHoldToOpenOthers) && IsItemHovered(ImGuiHoveredFlags_AllowWhenBlockedByActiveItem))
         {
             hovered = true;
             SetHoveredID(id);
             if (g.HoveredIdTimer - g.IO.DeltaTime <= DRAGDROP_HOLD_TO_OPEN_TIMER && g.HoveredIdTimer >= DRAGDROP_HOLD_TO_OPEN_TIMER)
             {
                 pressed = true;
-                g.DragDropHoldJustPressedId = id;
+                dd_ctx->DragDropHoldJustPressedId = id;
                 FocusWindow(window);
             }
         }
-        if (g.DragDropAcceptIdPrev == id && (g.DragDropAcceptFlagsPrev & ImGuiDragDropFlags_AcceptDrawAsHovered))
+        if (dd_ctx->DragDropAcceptIdPrev == id && (dd_ctx->DragDropAcceptFlagsPrev & ImGuiDragDropFlags_AcceptDrawAsHovered))
             hovered = true;
     }
 
@@ -743,7 +743,7 @@ bool ImGui::ButtonBehavior(const ImRect& bb, ImGuiID id, bool* out_hovered, bool
             {
                 bool release_in = hovered && (flags & ImGuiButtonFlags_PressedOnClickRelease) != 0;
                 bool release_anywhere = (flags & ImGuiButtonFlags_PressedOnClickReleaseAnywhere) != 0;
-                if ((release_in || release_anywhere) && !g.DragDropActive)
+                if ((release_in || release_anywhere) && !dd_ctx->DragDropActive)
                 {
                     // Report as pressed when releasing the mouse (this is the most common path)
                     bool is_double_click_release = (flags & ImGuiButtonFlags_PressedOnDoubleClick) && g.IO.MouseReleased[mouse_button] && g.IO.MouseClickedLastCount[mouse_button] == 2;
@@ -7001,7 +7001,7 @@ bool ImGui::TreeNodeBehavior(ImGuiID id, ImGuiTreeNodeFlags flags, const char* l
     bool toggled = false;
     if (!is_leaf)
     {
-        if (pressed && g.DragDropHoldJustPressedId != id)
+        if (pressed && dd_ctx->DragDropHoldJustPressedId != id)
         {
             if ((flags & ImGuiTreeNodeFlags_OpenOnMask_) == 0 || (g.NavActivateId == id && !is_multi_select))
                 toggled = true; // Single click
@@ -7010,7 +7010,7 @@ bool ImGui::TreeNodeBehavior(ImGuiID id, ImGuiTreeNodeFlags flags, const char* l
             if ((flags & ImGuiTreeNodeFlags_OpenOnDoubleClick) && g.IO.MouseClickedCount[0] == 2)
                 toggled = true; // Double click
         }
-        else if (pressed && g.DragDropHoldJustPressedId == id)
+        else if (pressed && dd_ctx->DragDropHoldJustPressedId == id)
         {
             IM_ASSERT(button_flags & ImGuiButtonFlags_PressedOnDragDropHold);
             if (!is_open) // When using Drag and Drop "hold to open" we keep the node highlighted after opening, but never close it again.
@@ -10573,7 +10573,7 @@ bool    ImGui::TabItemEx(ImGuiTabBar* tab_bar, const char* label, bool* p_open, 
     // Click to Select a tab
     // Allow the close button to overlap
     ImGuiButtonFlags button_flags = ((ImGuiButtonFlags)(is_tab_button ? ImGuiButtonFlags_PressedOnClickRelease : ImGuiButtonFlags_PressedOnClick) | ImGuiButtonFlags_AllowOverlap);
-    if (g.DragDropActive)
+    if (dd_ctx->DragDropActive)
         button_flags |= ImGuiButtonFlags_PressedOnDragDropHold;
     bool hovered, held, pressed;
     if (flags & ImGuiTabItemFlags_Invisible)
@@ -10586,7 +10586,7 @@ bool    ImGui::TabItemEx(ImGuiTabBar* tab_bar, const char* label, bool* p_open, 
     // Drag and drop: re-order tabs
     if (held && !tab_appearing && IsMouseDragging(0))
     {
-        if (!g.DragDropActive && (tab_bar->Flags & ImGuiTabBarFlags_Reorderable))
+        if (!dd_ctx->DragDropActive && (tab_bar->Flags & ImGuiTabBarFlags_Reorderable))
         {
             // While moving a tab it will jump on the other side of the mouse, so we also test for MouseDelta.x
             if (g.IO.MouseDelta.x < 0.0f && g.IO.MousePos.x < bb.Min.x)

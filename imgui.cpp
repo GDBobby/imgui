@@ -1436,6 +1436,7 @@ static void             UpdateViewportsNewFrame();
 // - DLL users: read comments above.
 #ifndef GImGui
 ImGuiContext*   GImGui = NULL;
+ImGuiDragDropContext* dd_ctx = NULL;
 #endif
 
 // Memory Allocator functions. Use SetAllocatorFunctions() to change them.
@@ -4116,6 +4117,29 @@ void ImGui::DestroyContext(ImGuiContext* ctx)
     IM_DELETE(ctx);
 }
 
+
+ImGuiDragDropContext* ImGui::CreateDragDropContext()
+{
+    ImGuiDragDropContext* ret = IM_NEW(ImGuiDragDropContext)();
+    if(dd_ctx == NULL)
+    {
+        dd_ctx = ret;
+    }
+    return ret;
+}
+void ImGui::DestroyDragDropContext()
+{
+    IM_DELETE(dd_ctx);
+}
+ImGuiDragDropContext* ImGui::GetCurrentDragDropContext()
+{
+    return dd_ctx;
+}
+void ImGui::SetCurrentDragDropContext(ImGuiDragDropContext* ctx)
+{
+    dd_ctx = ctx;
+}
+
 // IMPORTANT: interactive elements requires a fixed ###xxx suffix, it must be same in ALL languages to allow for automation.
 static const ImGuiLocEntry GLocalizationEntriesEnUS[] =
 {
@@ -4130,6 +4154,22 @@ static const ImGuiLocEntry GLocalizationEntriesEnUS[] =
     { ImGuiLocKey_OpenLink_s,           "Open '%s'"                             },
     { ImGuiLocKey_CopyLink,             "Copy Link###CopyLink"                  },
 };
+
+ImGuiDragDropContext::ImGuiDragDropContext()
+{
+    DragDropActive = DragDropWithinSource = DragDropWithinTarget = false;
+    DragDropSourceFlags = ImGuiDragDropFlags_None;
+    DragDropSourceFrameCount = -1;
+    DragDropMouseButton = -1;
+    DragDropTargetId = 0;
+    DragDropTargetFullViewport = 0;
+    DragDropAcceptFlagsCurr = DragDropAcceptFlagsPrev = ImGuiDragDropFlags_None;
+    DragDropAcceptIdCurrRectSurface = 0.0f;
+    DragDropAcceptIdPrev = DragDropAcceptIdCurr = 0;
+    DragDropAcceptFrameCount = -1;
+    DragDropHoldJustPressedId = 0;
+    memset(DragDropPayloadBufLocal, 0, sizeof(DragDropPayloadBufLocal));
+}
 
 ImGuiContext::ImGuiContext(ImFontAtlas* shared_font_atlas)
 {
@@ -4257,19 +4297,6 @@ ImGuiContext::ImGuiContext(ImFontAtlas* shared_font_atlas)
     NavWindowingToggleKey = ImGuiKey_None;
 
     DimBgRatio = 0.0f;
-
-    DragDropActive = DragDropWithinSource = DragDropWithinTarget = false;
-    DragDropSourceFlags = ImGuiDragDropFlags_None;
-    DragDropSourceFrameCount = -1;
-    DragDropMouseButton = -1;
-    DragDropTargetId = 0;
-    DragDropTargetFullViewport = 0;
-    DragDropAcceptFlagsCurr = DragDropAcceptFlagsPrev = ImGuiDragDropFlags_None;
-    DragDropAcceptIdCurrRectSurface = 0.0f;
-    DragDropAcceptIdPrev = DragDropAcceptIdCurr = 0;
-    DragDropAcceptFrameCount = -1;
-    DragDropHoldJustPressedId = 0;
-    memset(DragDropPayloadBufLocal, 0, sizeof(DragDropPayloadBufLocal));
 
     ClipperTempDataStacked = 0;
 
@@ -4757,7 +4784,7 @@ void ImGui::MarkItemEdited(ImGuiID id)
     // We accept a MarkItemEdited() on drag and drop targets (see https://github.com/ocornut/imgui/issues/1875#issuecomment-978243343)
     // We accept 'ActiveIdPreviousFrame == id' for InputText() returning an edit after it has been taken ActiveId away (#4714)
     // FIXME: This assert is getting a bit meaningless over time. It helped detect some unusual use cases but eventually it is becoming an unnecessary restriction.
-    IM_ASSERT(g.DragDropActive || g.ActiveId == id || g.ActiveId == 0 || g.ActiveIdPreviousFrame == id || g.NavJustMovedToId || (g.CurrentMultiSelect != NULL && g.BoxSelectState.IsActive));
+    IM_ASSERT(dd_ctx->DragDropActive || g.ActiveId == id || g.ActiveId == 0 || g.ActiveIdPreviousFrame == id || g.NavJustMovedToId || (g.CurrentMultiSelect != NULL && g.BoxSelectState.IsActive));
 
     //IM_ASSERT(g.CurrentWindow->DC.LastItemId == id);
     g.LastItemData.StatusFlags |= ImGuiItemStatusFlags_Edited;
@@ -4952,7 +4979,7 @@ bool ImGui::ItemHoverable(const ImRect& bb, ImGuiID id, ImGuiItemFlags item_flag
     if (id != 0)
     {
         // Drag source doesn't report as hovered
-        if (g.DragDropActive && g.DragDropPayload.SourceId == id && !(g.DragDropSourceFlags & ImGuiDragDropFlags_SourceNoDisableHover))
+        if (dd_ctx->DragDropActive && dd_ctx->DragDropPayload.SourceId == id && !(dd_ctx->DragDropSourceFlags & ImGuiDragDropFlags_SourceNoDisableHover))
             return false;
 
         SetHoveredID(id);
@@ -5425,7 +5452,7 @@ void ImGui::UpdateHoveredWindowAndCaptureFlags(const ImVec2& mouse_pos)
 
     // If mouse was first clicked outside of ImGui bounds we also cancel out hovering.
     // FIXME: For patterns of drag and drop across OS windows, we may need to rework/remove this test (first committed 311c0ca9 on 2015/02)
-    const bool mouse_dragging_extern_payload = g.DragDropActive && (g.DragDropSourceFlags & ImGuiDragDropFlags_SourceExtern) != 0;
+    const bool mouse_dragging_extern_payload = dd_ctx->DragDropActive && (dd_ctx->DragDropSourceFlags & ImGuiDragDropFlags_SourceExtern) != 0;
     if (!mouse_avail && !mouse_dragging_extern_payload)
         clear_hovered_windows = true;
 
@@ -5483,6 +5510,23 @@ static void SetupDrawListSharedData()
     g.DrawListSharedData.InitialFringeScale = 1.0f; // FIXME-DPI: Change this for some DPI scaling experiments.
 }
 
+void ImGui::NewFrameDD()
+{
+    // Drag and drop
+    dd_ctx->DragDropAcceptIdPrev = dd_ctx->DragDropAcceptIdCurr;
+    dd_ctx->DragDropAcceptIdCurr = 0;
+    dd_ctx->DragDropAcceptFlagsPrev = dd_ctx->DragDropAcceptFlagsCurr;
+    dd_ctx->DragDropAcceptFlagsCurr = ImGuiDragDropFlags_None;
+    dd_ctx->DragDropAcceptIdCurrRectSurface = FLT_MAX;
+    dd_ctx->DragDropWithinSource = false;
+    dd_ctx->DragDropWithinTarget = false;
+    dd_ctx->DragDropHoldJustPressedId = 0;
+}
+
+void ImGui::EndFrameDD()
+{
+}
+
 void ImGui::NewFrame()
 {
     IM_ASSERT(GImGui != NULL && "No current context. Did you call ImGui::CreateContext() and ImGui::SetCurrentContext() ?");
@@ -5535,9 +5579,26 @@ void ImGui::NewFrame()
     for (ImGuiViewportP* viewport : g.Viewports)
         viewport->DrawDataP.Valid = false;
 
+    if (dd_ctx->DragDropActive)
+    {
+        if(dd_ctx->DragDropPayload.SourceCtx == &g)
+        {
+            // Also works when g.ActiveId==0 (aka leftover payload in progress, no active id)
+            // You may disable this externally by hijacking the input route:
+            //  'if (GetDragDropPayload() != NULL) { Shortcut(ImGuiKey_Escape, ImGuiInputFlags_RouteGlobal | ImGuiInputFlags_RouteOverActive); }
+            // but you will not get a return value from Shortcut() due to ActiveIdUsingAllKeyboardKeys logic. You can however poll IsKeyPressed(ImGuiKey_Escape) afterwards.
+            ImGuiID owner_id = g.ActiveId ? g.ActiveId : ImHashStr("##DragDropCancelHandler");
+            if (Shortcut(ImGuiKey_Escape, ImGuiInputFlags_RouteGlobal, owner_id))
+            {
+                ClearActiveID();
+                ClearDragDrop();
+            }
+        }
+    }
+
     // Drag and drop keep the source ID alive so even if the source disappear our state is consistent
-    if (g.DragDropActive && g.DragDropPayload.SourceId == g.ActiveId)
-        KeepAliveID(g.DragDropPayload.SourceId);
+    if (dd_ctx->DragDropActive && dd_ctx->DragDropPayload.SourceId == g.ActiveId)
+        KeepAliveID(dd_ctx->DragDropPayload.SourceId);
 
     // [DEBUG]
     if (!g.IO.ConfigDebugHighlightIdConflicts || !g.IO.KeyCtrl) // Count is locked while holding Ctrl
@@ -5631,28 +5692,6 @@ void ImGui::NewFrame()
     //IM_ASSERT(g.IO.KeyAlt == IsKeyDown(ImGuiKey_LeftAlt) || IsKeyDown(ImGuiKey_RightAlt));
     //IM_ASSERT(g.IO.KeySuper == IsKeyDown(ImGuiKey_LeftSuper) || IsKeyDown(ImGuiKey_RightSuper));
 
-    // Drag and drop
-    g.DragDropAcceptIdPrev = g.DragDropAcceptIdCurr;
-    g.DragDropAcceptIdCurr = 0;
-    g.DragDropAcceptFlagsPrev = g.DragDropAcceptFlagsCurr;
-    g.DragDropAcceptFlagsCurr = ImGuiDragDropFlags_None;
-    g.DragDropAcceptIdCurrRectSurface = FLT_MAX;
-    g.DragDropWithinSource = false;
-    g.DragDropWithinTarget = false;
-    g.DragDropHoldJustPressedId = 0;
-    if (g.DragDropActive)
-    {
-        // Also works when g.ActiveId==0 (aka leftover payload in progress, no active id)
-        // You may disable this externally by hijacking the input route:
-        //  'if (GetDragDropPayload() != NULL) { Shortcut(ImGuiKey_Escape, ImGuiInputFlags_RouteGlobal | ImGuiInputFlags_RouteOverActive); }
-        // but you will not get a return value from Shortcut() due to ActiveIdUsingAllKeyboardKeys logic. You can however poll IsKeyPressed(ImGuiKey_Escape) afterwards.
-        ImGuiID owner_id = g.ActiveId ? g.ActiveId : ImHashStr("##DragDropCancelHandler");
-        if (Shortcut(ImGuiKey_Escape, ImGuiInputFlags_RouteGlobal, owner_id))
-        {
-            ClearActiveID();
-            ClearDragDrop();
-        }
-    }
     g.TooltipPreviousWindow = NULL;
 
     // Update keyboard/gamepad navigation
@@ -6004,26 +6043,27 @@ void ImGui::EndFrame()
 
     // Update navigation: Ctrl+Tab, wrap-around requests
     NavEndFrame();
-
     // Drag and Drop: Elapse payload (if delivered, or if source stops being submitted)
-    if (g.DragDropActive)
+    if (dd_ctx->DragDropActive)
     {
-        bool is_delivered = g.DragDropPayload.Delivery;
-        bool is_elapsed = (g.DragDropSourceFrameCount + 1 < g.FrameCount) && ((g.DragDropSourceFlags & ImGuiDragDropFlags_PayloadAutoExpire) || g.DragDropMouseButton == -1 || !IsMouseDown(g.DragDropMouseButton));
-        if (is_delivered || is_elapsed)
-            ClearDragDrop();
+        if(dd_ctx->DragDropPayload.SourceCtx == &g)
+        {
+            bool is_delivered = dd_ctx->DragDropPayload.Delivery;
+            bool is_elapsed = (dd_ctx->DragDropSourceFrameCount + 1 < g.FrameCount) && ((dd_ctx->DragDropSourceFlags & ImGuiDragDropFlags_PayloadAutoExpire) || dd_ctx->DragDropMouseButton == -1 || !IsMouseDown(dd_ctx->DragDropMouseButton));
+            if (is_delivered || is_elapsed)
+                ClearDragDrop();
+        }
     }
-
     // Drag and Drop: Fallback for missing source tooltip. This is not ideal but better than nothing.
     // If you want to handle source item disappearing: instead of submitting your description tooltip
     // in the BeginDragDropSource() block of the dragged item, you can submit them from a safe single spot
     // (e.g. end of your item loop, or before EndFrame) by reading payload data.
     // In the typical case, the contents of drag tooltip should be possible to infer solely from payload data.
-    if (g.DragDropActive && g.DragDropSourceFrameCount + 1 < g.FrameCount && !(g.DragDropSourceFlags & ImGuiDragDropFlags_SourceNoPreviewTooltip))
+    if (dd_ctx->DragDropActive && dd_ctx->DragDropSourceFrameCount + 1 < g.FrameCount && !(dd_ctx->DragDropSourceFlags & ImGuiDragDropFlags_SourceNoPreviewTooltip))
     {
-        g.DragDropWithinSource = true;
+        dd_ctx->DragDropWithinSource = true;
         SetTooltip("...");
-        g.DragDropWithinSource = false;
+        dd_ctx->DragDropWithinSource = false;
     }
 
     // End frame
@@ -8772,7 +8812,7 @@ void ImGui::FocusItem()
     ImGuiContext& g = *GImGui;
     ImGuiWindow* window = g.CurrentWindow;
     IMGUI_DEBUG_LOG_FOCUS("FocusItem(0x%08x) in window \"%s\"\n", g.LastItemData.ID, window->Name);
-    if (g.DragDropActive || g.MovingWindow != NULL) // FIXME: Opt-in flags for this?
+    if (dd_ctx->DragDropActive || g.MovingWindow != NULL) // FIXME: Opt-in flags for this?
     {
         IMGUI_DEBUG_LOG_FOCUS("FocusItem() ignored while DragDropActive!\n");
         return;
@@ -8805,7 +8845,7 @@ void ImGui::SetKeyboardFocusHere(int offset)
     // When we refactor this function into ActivateItem() we may want to make this an option.
     // MovingWindow is protected from most user inputs using SetActiveIdUsingNavAndKeys(), but
     // is also automatically dropped in the event g.ActiveId is stolen.
-    if (g.DragDropActive || g.MovingWindow != NULL)
+    if (dd_ctx->DragDropActive || g.MovingWindow != NULL)
     {
         IMGUI_DEBUG_LOG_FOCUS("SetKeyboardFocusHere() ignored while DragDropActive!\n");
         return;
@@ -12008,7 +12048,7 @@ bool ImGui::BeginTooltipEx(ImGuiTooltipFlags tooltip_flags, ImGuiWindowFlags ext
 {
     ImGuiContext& g = *GImGui;
 
-    const bool is_dragdrop_tooltip = g.DragDropWithinSource || g.DragDropWithinTarget;
+    const bool is_dragdrop_tooltip = dd_ctx->DragDropWithinSource || dd_ctx->DragDropWithinTarget;
     if (is_dragdrop_tooltip)
     {
         // Drag and Drop tooltips are positioning differently than other tooltips:
@@ -14741,24 +14781,23 @@ void ImGui::NavUpdateWindowingOverlay()
 
 bool ImGui::IsDragDropActive()
 {
-    ImGuiContext& g = *GImGui;
-    return g.DragDropActive;
+    return dd_ctx->DragDropActive;
 }
 
 void ImGui::ClearDragDrop()
 {
     ImGuiContext& g = *GImGui;
-    if (g.DragDropActive)
+    if (dd_ctx->DragDropActive)
         IMGUI_DEBUG_LOG_ACTIVEID("[dragdrop] ClearDragDrop()\n");
-    g.DragDropActive = false;
-    g.DragDropPayload.Clear();
-    g.DragDropAcceptFlagsCurr = ImGuiDragDropFlags_None;
-    g.DragDropAcceptIdCurr = g.DragDropAcceptIdPrev = 0;
-    g.DragDropAcceptIdCurrRectSurface = FLT_MAX;
-    g.DragDropAcceptFrameCount = -1;
+    dd_ctx->DragDropActive = false;
+    dd_ctx->DragDropPayload.Clear();
+    dd_ctx->DragDropAcceptFlagsCurr = ImGuiDragDropFlags_None;
+    dd_ctx->DragDropAcceptIdCurr = dd_ctx->DragDropAcceptIdPrev = 0;
+    dd_ctx->DragDropAcceptIdCurrRectSurface = FLT_MAX;
+    dd_ctx->DragDropAcceptFrameCount = -1;
 
-    g.DragDropPayloadBufHeap.clear();
-    memset(&g.DragDropPayloadBufLocal, 0, sizeof(g.DragDropPayloadBufLocal));
+    dd_ctx->DragDropPayloadBufHeap.clear();
+    memset(&dd_ctx->DragDropPayloadBufLocal, 0, sizeof(dd_ctx->DragDropPayloadBufLocal));
 }
 
 bool ImGui::BeginTooltipHidden()
@@ -14853,35 +14892,36 @@ bool ImGui::BeginDragDropSource(ImGuiDragDropFlags flags)
         SetActiveID(source_id, NULL);
     }
 
-    IM_ASSERT(g.DragDropWithinTarget == false); // Can't nest BeginDragDropSource() and BeginDragDropTarget()
+    IM_ASSERT(dd_ctx->DragDropWithinTarget == false); // Can't nest BeginDragDropSource() and BeginDragDropTarget()
     if (!source_drag_active)
         return false;
 
     // Activate drag and drop
-    if (!g.DragDropActive)
+    if (!dd_ctx->DragDropActive)
     {
         IM_ASSERT(source_id != 0);
         ClearDragDrop();
         IMGUI_DEBUG_LOG_ACTIVEID("[dragdrop] BeginDragDropSource() DragDropActive = true, source_id = 0x%08X%s\n",
             source_id, (flags & ImGuiDragDropFlags_SourceExtern) ? " (EXTERN)" : "");
-        ImGuiPayload& payload = g.DragDropPayload;
+        ImGuiPayload& payload = dd_ctx->DragDropPayload;
+        payload.SourceCtx = &g;
         payload.SourceId = source_id;
         payload.SourceParentId = source_parent_id;
-        g.DragDropActive = true;
-        g.DragDropSourceFlags = flags;
-        g.DragDropMouseButton = mouse_button;
+        dd_ctx->DragDropActive = true;
+        dd_ctx->DragDropSourceFlags = flags;
+        dd_ctx->DragDropMouseButton = mouse_button;
         if (payload.SourceId == g.ActiveId)
             g.ActiveIdNoClearOnFocusLoss = true;
     }
-    g.DragDropSourceFrameCount = g.FrameCount;
-    g.DragDropWithinSource = true;
+    dd_ctx->DragDropSourceFrameCount = g.FrameCount;
+    dd_ctx->DragDropWithinSource = true;
 
     if (!(flags & ImGuiDragDropFlags_SourceNoPreviewTooltip))
     {
         // Target can request the Source to not display its tooltip (we use a dedicated flag to make this request explicit)
         // We unfortunately can't just modify the source flags and skip the call to BeginTooltip, as caller may be emitting contents.
         bool ret;
-        if (g.DragDropAcceptIdPrev && (g.DragDropAcceptFlagsPrev & ImGuiDragDropFlags_AcceptNoPreviewTooltip))
+        if (dd_ctx->DragDropAcceptIdPrev && (dd_ctx->DragDropAcceptFlagsPrev & ImGuiDragDropFlags_AcceptNoPreviewTooltip))
             ret = BeginTooltipHidden();
         else
             ret = BeginTooltip();
@@ -14892,29 +14932,30 @@ bool ImGui::BeginDragDropSource(ImGuiDragDropFlags flags)
     if (!(flags & ImGuiDragDropFlags_SourceNoDisableHover) && !(flags & ImGuiDragDropFlags_SourceExtern))
         g.LastItemData.StatusFlags &= ~ImGuiItemStatusFlags_HoveredRect;
 
+    dd_ctx->LastItemData_StatusFlags = g.LastItemData.StatusFlags;
+
     return true;
 }
 
 void ImGui::EndDragDropSource()
 {
-    ImGuiContext& g = *GImGui;
-    IM_ASSERT(g.DragDropActive);
-    IM_ASSERT(g.DragDropWithinSource && "Not after a BeginDragDropSource()?");
+    IM_ASSERT(dd_ctx->DragDropActive);
+    IM_ASSERT(dd_ctx->DragDropWithinSource && "Not after a BeginDragDropSource()?");
 
-    if (!(g.DragDropSourceFlags & ImGuiDragDropFlags_SourceNoPreviewTooltip))
+    if (!(dd_ctx->DragDropSourceFlags & ImGuiDragDropFlags_SourceNoPreviewTooltip))
         EndTooltip();
 
     // Discard the drag if have not called SetDragDropPayload()
-    if (g.DragDropPayload.DataFrameCount == -1)
+    if (dd_ctx->DragDropPayload.DataFrameCount == -1)
         ClearDragDrop();
-    g.DragDropWithinSource = false;
+    dd_ctx->DragDropWithinSource = false;
 }
 
 // Use 'cond' to choose to submit payload on drag start or every frame
 bool ImGui::SetDragDropPayload(const char* type, const void* data, size_t data_size, ImGuiCond cond)
 {
     ImGuiContext& g = *GImGui;
-    ImGuiPayload& payload = g.DragDropPayload;
+    ImGuiPayload& payload = dd_ctx->DragDropPayload;
     if (cond == 0)
         cond = ImGuiCond_Always;
 
@@ -14928,19 +14969,19 @@ bool ImGui::SetDragDropPayload(const char* type, const void* data, size_t data_s
     {
         // Copy payload
         ImStrncpy(payload.DataType, type, IM_COUNTOF(payload.DataType));
-        g.DragDropPayloadBufHeap.resize(0);
-        if (data_size > sizeof(g.DragDropPayloadBufLocal))
+        dd_ctx->DragDropPayloadBufHeap.resize(0);
+        if (data_size > sizeof(dd_ctx->DragDropPayloadBufLocal))
         {
             // Store in heap
-            g.DragDropPayloadBufHeap.resize((int)data_size);
-            payload.Data = g.DragDropPayloadBufHeap.Data;
+            dd_ctx->DragDropPayloadBufHeap.resize((int)data_size);
+            payload.Data = dd_ctx->DragDropPayloadBufHeap.Data;
             memcpy(payload.Data, data, (size_t)(int)data_size);
         }
         else if (data_size > 0)
         {
             // Store locally
-            memset(&g.DragDropPayloadBufLocal, 0, sizeof(g.DragDropPayloadBufLocal));
-            payload.Data = g.DragDropPayloadBufLocal;
+            memset(&dd_ctx->DragDropPayloadBufLocal, 0, sizeof(dd_ctx->DragDropPayloadBufLocal));
+            payload.Data = dd_ctx->DragDropPayloadBufLocal;
             memcpy(payload.Data, data, (size_t)(int)data_size);
         }
         else
@@ -14952,56 +14993,7 @@ bool ImGui::SetDragDropPayload(const char* type, const void* data, size_t data_s
     payload.DataFrameCount = g.FrameCount;
 
     // Return whether the payload has been accepted
-    return (g.DragDropAcceptFrameCount == g.FrameCount) || (g.DragDropAcceptFrameCount == g.FrameCount - 1);
-}
-
-bool ImGui::BeginDragDropTargetCustom(const ImRect& bb, ImGuiID id)
-{
-    ImGuiContext& g = *GImGui;
-    if (!g.DragDropActive)
-        return false;
-
-    ImGuiWindow* window = g.CurrentWindow;
-    ImGuiWindow* hovered_window = g.HoveredWindowUnderMovingWindow;
-    if (hovered_window == NULL || window->RootWindow != hovered_window->RootWindow)
-        return false;
-    IM_ASSERT(id != 0);
-    if (!IsMouseHoveringRect(bb.Min, bb.Max) || (id == g.DragDropPayload.SourceId))
-        return false;
-    if (window->SkipItems)
-        return false;
-
-    IM_ASSERT(g.DragDropWithinTarget == false && g.DragDropWithinSource == false); // Can't nest BeginDragDropSource() and BeginDragDropTarget()
-    g.DragDropTargetRect = bb;
-    g.DragDropTargetClipRect = window->ClipRect; // May want to be overridden by user depending on use case?
-    g.DragDropTargetId = id;
-    g.DragDropTargetFullViewport = 0;
-    g.DragDropWithinTarget = true;
-    return true;
-}
-
-// Typical usage would be:
-//   if (!ImGui::IsWindowHovered(ImGuiHoveredFlags_AnyWindow | ImGuiHoveredFlags_AllowWhenBlockedByActiveItem))
-//       if (ImGui::BeginDragDropTargetViewport(ImGui::GetMainViewport(), NULL))
-// But we are leaving the hover test to the caller for maximum flexibility.
-bool ImGui::BeginDragDropTargetViewport(ImGuiViewport* viewport, const ImRect* p_bb)
-{
-    ImGuiContext& g = *GImGui;
-    if (!g.DragDropActive)
-        return false;
-
-    ImRect bb = p_bb ? *p_bb : ((ImGuiViewportP*)viewport)->GetWorkRect();
-    ImGuiID id = viewport->ID;
-    if (!IsMouseHoveringRect(bb.Min, bb.Max, false) || (id == g.DragDropPayload.SourceId))
-        return false;
-
-    IM_ASSERT(g.DragDropWithinTarget == false && g.DragDropWithinSource == false); // Can't nest BeginDragDropSource() and BeginDragDropTarget()
-    g.DragDropTargetRect = bb;
-    g.DragDropTargetClipRect = bb;
-    g.DragDropTargetId = id;
-    g.DragDropTargetFullViewport = id;
-    g.DragDropWithinTarget = true;
-    return true;
+    return (dd_ctx->DragDropAcceptFrameCount == g.FrameCount) || (dd_ctx->DragDropAcceptFrameCount == g.FrameCount - 1);
 }
 
 // We don't use BeginDragDropTargetCustom() and duplicate its code because:
@@ -15011,15 +15003,22 @@ bool ImGui::BeginDragDropTargetViewport(ImGuiViewport* viewport, const ImRect* p
 bool ImGui::BeginDragDropTarget()
 {
     ImGuiContext& g = *GImGui;
-    if (!g.DragDropActive)
+    if (!dd_ctx->DragDropActive)
         return false;
 
     ImGuiWindow* window = g.CurrentWindow;
     if (!(g.LastItemData.StatusFlags & ImGuiItemStatusFlags_HoveredRect))
         return false;
     ImGuiWindow* hovered_window = g.HoveredWindowUnderMovingWindow;
-    if (hovered_window == NULL || window->RootWindow != hovered_window->RootWindow || window->SkipItems)
-        return false;
+    if(hovered_window != nullptr)
+    {
+        if(window->RootWindow != hovered_window->RootWindow || window->SkipItems)
+        {
+            return false;
+        }
+    }
+    //if (hovered_window == NULL || window->RootWindow != hovered_window->RootWindow || window->SkipItems)
+        //return false;
 
     const ImRect& display_rect = (g.LastItemData.StatusFlags & ImGuiItemStatusFlags_HasDisplayRect) ? g.LastItemData.DisplayRect : g.LastItemData.Rect;
     ImGuiID id = g.LastItemData.ID;
@@ -15028,52 +15027,51 @@ bool ImGui::BeginDragDropTarget()
         id = window->GetIDFromRectangle(display_rect);
         KeepAliveID(id);
     }
-    if (g.DragDropPayload.SourceId == id)
+    if (dd_ctx->DragDropPayload.SourceId == id && dd_ctx->DragDropPayload.SourceCtx == &g)
         return false;
 
-    IM_ASSERT(g.DragDropWithinTarget == false && g.DragDropWithinSource == false); // Can't nest BeginDragDropSource() and BeginDragDropTarget()
-    g.DragDropTargetRect = display_rect;
-    g.DragDropTargetClipRect = (g.LastItemData.StatusFlags & ImGuiItemStatusFlags_HasClipRect) ? g.LastItemData.ClipRect : window->ClipRect;
-    g.DragDropTargetId = id;
-    g.DragDropWithinTarget = true;
+    IM_ASSERT(dd_ctx->DragDropWithinTarget == false && dd_ctx->DragDropWithinSource == false); // Can't nest BeginDragDropSource() and BeginDragDropTarget()
+    dd_ctx->DragDropTargetRect = display_rect;
+    dd_ctx->DragDropTargetClipRect = (g.LastItemData.StatusFlags & ImGuiItemStatusFlags_HasClipRect) ? g.LastItemData.ClipRect : window->ClipRect;
+    dd_ctx->DragDropTargetId = id;
+    dd_ctx->DragDropWithinTarget = true;
     return true;
 }
 
 bool ImGui::IsDragDropPayloadBeingAccepted()
 {
-    ImGuiContext& g = *GImGui;
-    return g.DragDropActive && g.DragDropAcceptIdPrev != 0;
+    return dd_ctx->DragDropActive && dd_ctx->DragDropAcceptIdPrev != 0;
 }
 
 const ImGuiPayload* ImGui::AcceptDragDropPayload(const char* type, ImGuiDragDropFlags flags)
 {
     ImGuiContext& g = *GImGui;
-    ImGuiPayload& payload = g.DragDropPayload;
-    IM_ASSERT(g.DragDropActive);                        // Not called between BeginDragDropTarget() and EndDragDropTarget() ?
+    ImGuiPayload& payload = dd_ctx->DragDropPayload;
+    IM_ASSERT(dd_ctx->DragDropActive);                        // Not called between BeginDragDropTarget() and EndDragDropTarget() ?
     IM_ASSERT(payload.DataFrameCount != -1);            // Forgot to call EndDragDropTarget() ?
     if (type != NULL && !payload.IsDataType(type))
         return NULL;
 
     // Accept smallest drag target bounding box, this allows us to nest drag targets conveniently without ordering constraints.
     // NB: We currently accept NULL id as target. However, overlapping targets requires a unique ID to function!
-    const bool was_accepted_previously = (g.DragDropAcceptIdPrev == g.DragDropTargetId);
-    ImRect r = g.DragDropTargetRect;
+    const bool was_accepted_previously = (dd_ctx->DragDropAcceptIdPrev == dd_ctx->DragDropTargetId);
+    ImRect r = dd_ctx->DragDropTargetRect;
     float r_surface = r.GetWidth() * r.GetHeight();
-    if (r_surface > g.DragDropAcceptIdCurrRectSurface)
+    if (r_surface > dd_ctx->DragDropAcceptIdCurrRectSurface)
         return NULL;
 
-    g.DragDropAcceptFlagsCurr = flags;
-    g.DragDropAcceptIdCurr = g.DragDropTargetId;
-    g.DragDropAcceptIdCurrRectSurface = r_surface;
-    //IMGUI_DEBUG_LOG("AcceptDragDropPayload(): %08X: accept\n", g.DragDropTargetId);
+    dd_ctx->DragDropAcceptFlagsCurr = flags;
+    dd_ctx->DragDropAcceptIdCurr = dd_ctx->DragDropTargetId;
+    dd_ctx->DragDropAcceptIdCurrRectSurface = r_surface;
+    //IMGUI_DEBUG_LOG("AcceptDragDropPayload(): %08X: accept\n", dd_ctx->DragDropTargetId);
 
     // Render default drop visuals
     payload.Preview = was_accepted_previously;
-    flags |= (g.DragDropSourceFlags & ImGuiDragDropFlags_AcceptNoDrawDefaultRect); // Source can also inhibit the preview (useful for external sources that live for 1 frame)
+    flags |= (dd_ctx->DragDropSourceFlags & ImGuiDragDropFlags_AcceptNoDrawDefaultRect); // Source can also inhibit the preview (useful for external sources that live for 1 frame)
     const bool draw_target_rect = payload.Preview && !(flags & ImGuiDragDropFlags_AcceptNoDrawDefaultRect);
-    if (draw_target_rect && g.DragDropTargetFullViewport != 0)
+    if (draw_target_rect && dd_ctx->DragDropTargetFullViewport != 0)
     {
-        ImRect bb = g.DragDropTargetRect;
+        ImRect bb = dd_ctx->DragDropTargetRect;
         bb.Expand(-3.5f);
         RenderDragDropTargetRectEx(GetForegroundDrawList(), bb);
     }
@@ -15082,17 +15080,66 @@ const ImGuiPayload* ImGui::AcceptDragDropPayload(const char* type, ImGuiDragDrop
         RenderDragDropTargetRectForItem(r);
     }
 
-    g.DragDropAcceptFrameCount = g.FrameCount;
-    if ((g.DragDropSourceFlags & ImGuiDragDropFlags_SourceExtern) && g.DragDropMouseButton == -1)
-        payload.Delivery = was_accepted_previously && (g.DragDropSourceFrameCount < g.FrameCount);
+    dd_ctx->DragDropAcceptFrameCount = g.FrameCount;
+    if ((dd_ctx->DragDropSourceFlags & ImGuiDragDropFlags_SourceExtern) && dd_ctx->DragDropMouseButton == -1)
+        payload.Delivery = was_accepted_previously && (dd_ctx->DragDropSourceFrameCount < g.FrameCount);
     else
-        payload.Delivery = was_accepted_previously && !IsMouseDown(g.DragDropMouseButton); // For extern drag sources affecting OS window focus, it's easier to just test !IsMouseDown() instead of IsMouseReleased()
+        payload.Delivery = was_accepted_previously && !IsMouseDown(dd_ctx->DragDropMouseButton); // For extern drag sources affecting OS window focus, it's easier to just test !IsMouseDown() instead of IsMouseReleased()
     if (!payload.Delivery && !(flags & ImGuiDragDropFlags_AcceptBeforeDelivery))
         return NULL;
 
     if (payload.Delivery)
-        IMGUI_DEBUG_LOG_ACTIVEID("[dragdrop] AcceptDragDropPayload(): 0x%08X: payload delivery\n", g.DragDropTargetId);
+        IMGUI_DEBUG_LOG_ACTIVEID("[dragdrop] AcceptDragDropPayload(): 0x%08X: payload delivery\n", dd_ctx->DragDropTargetId);
     return &payload;
+}
+
+
+bool ImGui::BeginDragDropTargetCustom(const ImRect& bb, ImGuiID id)
+{
+    ImGuiContext& g = *GImGui;
+    if (!dd_ctx->DragDropActive)
+        return false;
+
+    ImGuiWindow* window = g.CurrentWindow;
+    ImGuiWindow* hovered_window = g.HoveredWindowUnderMovingWindow;
+    if (hovered_window == NULL || window->RootWindow != hovered_window->RootWindow)
+        return false;
+    IM_ASSERT(id != 0);
+    if (!IsMouseHoveringRect(bb.Min, bb.Max) || (id == dd_ctx->DragDropPayload.SourceId))
+        return false;
+    if (window->SkipItems)
+        return false;
+
+    IM_ASSERT(dd_ctx->DragDropWithinTarget == false && dd_ctx->DragDropWithinSource == false); // Can't nest BeginDragDropSource() and BeginDragDropTarget()
+    dd_ctx->DragDropTargetRect = bb;
+    dd_ctx->DragDropTargetClipRect = window->ClipRect; // May want to be overridden by user depending on use case?
+    dd_ctx->DragDropTargetId = id;
+    dd_ctx->DragDropTargetFullViewport = 0;
+    dd_ctx->DragDropWithinTarget = true;
+    return true;
+}
+
+// Typical usage would be:
+//   if (!ImGui::IsWindowHovered(ImGuiHoveredFlags_AnyWindow | ImGuiHoveredFlags_AllowWhenBlockedByActiveItem))
+//       if (ImGui::BeginDragDropTargetViewport(ImGui::GetMainViewport(), NULL))
+// But we are leaving the hover test to the caller for maximum flexibility.
+bool ImGui::BeginDragDropTargetViewport(ImGuiViewport* viewport, const ImRect* p_bb)
+{
+    if (!dd_ctx->DragDropActive)
+        return false;
+
+    ImRect bb = p_bb ? *p_bb : ((ImGuiViewportP*)viewport)->GetWorkRect();
+    ImGuiID id = viewport->ID;
+    if (!IsMouseHoveringRect(bb.Min, bb.Max, false) || (id == dd_ctx->DragDropPayload.SourceId))
+        return false;
+
+    IM_ASSERT(dd_ctx->DragDropWithinTarget == false && dd_ctx->DragDropWithinSource == false); // Can't nest BeginDragDropSource() and BeginDragDropTarget()
+    dd_ctx->DragDropTargetRect = bb;
+    dd_ctx->DragDropTargetClipRect = bb;
+    dd_ctx->DragDropTargetId = id;
+    dd_ctx->DragDropTargetFullViewport = id;
+    dd_ctx->DragDropWithinTarget = true;
+    return true;
 }
 
 // FIXME-STYLE FIXME-DRAGDROP: Settle on a proper default visuals for drop target.
@@ -15101,7 +15148,7 @@ void ImGui::RenderDragDropTargetRectForItem(const ImRect& bb)
     ImGuiContext& g = *GImGui;
     ImGuiWindow* window = g.CurrentWindow;
     ImRect bb_display = bb;
-    bb_display.ClipWith(g.DragDropTargetClipRect); // Clip THEN expand so we have a way to visualize that target is not entirely visible.
+    bb_display.ClipWith(dd_ctx->DragDropTargetClipRect); // Clip THEN expand so we have a way to visualize that target is not entirely visible.
     bb_display.Expand(g.Style.DragDropTargetPadding);
     bool push_clip_rect = !window->ClipRect.Contains(bb_display);
     if (push_clip_rect)
@@ -15120,19 +15167,17 @@ void ImGui::RenderDragDropTargetRectEx(ImDrawList* draw_list, const ImRect& bb)
 
 const ImGuiPayload* ImGui::GetDragDropPayload()
 {
-    ImGuiContext& g = *GImGui;
-    return (g.DragDropActive && g.DragDropPayload.DataFrameCount != -1) ? &g.DragDropPayload : NULL;
+    return (dd_ctx->DragDropActive && dd_ctx->DragDropPayload.DataFrameCount != -1) ? &dd_ctx->DragDropPayload : NULL;
 }
 
 void ImGui::EndDragDropTarget()
 {
-    ImGuiContext& g = *GImGui;
-    IM_ASSERT(g.DragDropActive);
-    IM_ASSERT(g.DragDropWithinTarget);
-    g.DragDropWithinTarget = false;
+    IM_ASSERT(dd_ctx->DragDropActive);
+    IM_ASSERT(dd_ctx->DragDropWithinTarget);
+    dd_ctx->DragDropWithinTarget = false;
 
     // Clear drag and drop state payload right after delivery
-    if (g.DragDropPayload.Delivery)
+    if (dd_ctx->DragDropPayload.Delivery)
         ClearDragDrop();
 }
 
@@ -17000,8 +17045,8 @@ void ImGui::ShowMetricsWindow(bool* p_open)
         Text("ActiveIdUsing: AllKeyboardKeys: %d, NavDirMask: %X", g.ActiveIdUsingAllKeyboardKeys, g.ActiveIdUsingNavDirMask);
         Text("HoveredId: 0x%08X (%.2f sec), AllowOverlap: %d", g.HoveredIdPreviousFrame, g.HoveredIdTimer, g.HoveredIdAllowOverlap); // Not displaying g.HoveredId as it is update mid-frame
         Text("HoverItemDelayId: 0x%08X, Timer: %.2f, ClearTimer: %.2f", g.HoverItemDelayId, g.HoverItemDelayTimer, g.HoverItemDelayClearTimer);
-        Text("DragDrop: %d, SourceId = 0x%08X, Payload \"%s\" (%d bytes)", g.DragDropActive, g.DragDropPayload.SourceId, g.DragDropPayload.DataType, g.DragDropPayload.DataSize);
-        DebugLocateItemOnHover(g.DragDropPayload.SourceId);
+        Text("DragDrop: %d, SourceId = 0x%08X, Payload \"%s\" (%d bytes)", dd_ctx->DragDropActive, dd_ctx->DragDropPayload.SourceId, dd_ctx->DragDropPayload.DataType, dd_ctx->DragDropPayload.DataSize);
+        DebugLocateItemOnHover(dd_ctx->DragDropPayload.SourceId);
         Unindent();
 
         Text("NAV,FOCUS");

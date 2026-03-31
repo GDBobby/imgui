@@ -641,14 +641,9 @@ void ImGui_ImplVulkan_RenderDrawData(ImDrawData* draw_data, VkCommandBuffer comm
                 // Clamp to viewport as vkCmdSetScissor() won't accept values that are off bounds
                 if (scissor_offset.x < 0.0f) { scissor_offset.x = 0.0f; }
                 if (scissor_offset.y < 0.0f) { scissor_offset.y = 0.0f; }
-                const float scissor_rect_right = scissor_offset.x + scissor_extent.x;
-                const float scissor_rect_bottom = scissor_offset.y + scissor_offset.y;
-                if (scissor_rect_right > fb_width) { scissor_extent.x = (float)fb_width - scissor_offset.x; }
-                if (scissor_rect_bottom > fb_height) { scissor_extent.y = (float)fb_height - scissor_offset.y; }
-                if(scissor_extent.x <= 0.f || scissor_extent.y <= 0.f){
-                    continue;
-                }
-                if(scissor_offset.x >= fb_width || scissor_offset.y >= fb_height){
+                if (scissor_extent.x > fb_width) { scissor_extent.x = (float)fb_width; }
+                if (scissor_extent.y > fb_height) { scissor_extent.y = (float)fb_height; }
+                if (scissor_extent.x <= 0.f || scissor_extent.y <= 0.f){
                     continue;
                 }
 

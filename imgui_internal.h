@@ -224,6 +224,7 @@ typedef ImU16 ImGuiTableDrawChannelIdx;
 
 #ifndef GImGui
 extern IMGUI_API ImGuiContext* GImGui;  // Current implicit context pointer
+extern IMGUI_API ImGuiDragDropContext* dd_ctx;
 #endif
 
 //-----------------------------------------------------------------------------
@@ -2188,6 +2189,34 @@ typedef void (*ImGuiDemoMarkerCallback)(const char* file, int line, const char* 
 // [SECTION] ImGuiContext (main Dear ImGui context)
 //-----------------------------------------------------------------------------
 
+struct ImGuiDragDropContext{
+    // Drag and Drop
+    bool                    DragDropActive;
+    bool                    DragDropWithinSource;               // Set when within a BeginDragDropXXX/EndDragDropXXX block for a drag source.
+    bool                    DragDropWithinTarget;               // Set when within a BeginDragDropXXX/EndDragDropXXX block for a drag target.
+    ImGuiDragDropFlags      DragDropSourceFlags;
+    int                     DragDropSourceFrameCount;
+    int                     DragDropMouseButton;
+    ImGuiPayload            DragDropPayload;
+    ImRect                  DragDropTargetRect;                 // Store rectangle of current target candidate (we favor small targets when overlapping)
+    ImRect                  DragDropTargetClipRect;             // Store ClipRect at the time of item's drawing
+    ImGuiID                 DragDropTargetId;
+    ImGuiID                 DragDropTargetFullViewport;
+    ImGuiDragDropFlags      DragDropAcceptFlagsCurr;
+    ImGuiDragDropFlags      DragDropAcceptFlagsPrev;
+    float                   DragDropAcceptIdCurrRectSurface;    // Target item surface (we resolve overlapping targets by prioritizing the smaller surface)
+    ImGuiID                 DragDropAcceptIdCurr;               // Target item id (set at the time of accepting the payload)
+    ImGuiID                 DragDropAcceptIdPrev;               // Target item id from previous frame (we need to store this to allow for overlapping drag and drop targets)
+    int                     DragDropAcceptFrameCount;           // Last time a target expressed a desire to accept the source
+    ImGuiID                 DragDropHoldJustPressedId;          // Set when holding a payload just made ButtonBehavior() return a press.
+    ImVector<unsigned char> DragDropPayloadBufHeap;             // We don't expose the ImVector<> directly, ImGuiPayload only holds pointer+size
+    unsigned char           DragDropPayloadBufLocal[16];        // Local buffer for small payloads
+
+    ImGuiItemStatusFlags LastItemData_StatusFlags;
+
+    ImGuiDragDropContext();
+};
+
 struct ImGuiContext
 {
     bool                    Initialized;
@@ -2396,28 +2425,6 @@ struct ImGuiContext
 
     // Render
     float                   DimBgRatio;                         // 0.0..1.0 animation when fading in a dimming background (for modal window and Ctrl+Tab list)
-
-    // Drag and Drop
-    bool                    DragDropActive;
-    bool                    DragDropWithinSource;               // Set when within a BeginDragDropXXX/EndDragDropXXX block for a drag source.
-    bool                    DragDropWithinTarget;               // Set when within a BeginDragDropXXX/EndDragDropXXX block for a drag target.
-    ImGuiDragDropFlags      DragDropSourceFlags;
-    int                     DragDropSourceFrameCount;
-    int                     DragDropMouseButton;
-    ImGuiPayload            DragDropPayload;
-    ImRect                  DragDropTargetRect;                 // Store rectangle of current target candidate (we favor small targets when overlapping)
-    ImRect                  DragDropTargetClipRect;             // Store ClipRect at the time of item's drawing
-    ImGuiID                 DragDropTargetId;
-    ImGuiID                 DragDropTargetFullViewport;
-    ImGuiDragDropFlags      DragDropAcceptFlagsCurr;
-    ImGuiDragDropFlags      DragDropAcceptFlagsPrev;
-    float                   DragDropAcceptIdCurrRectSurface;    // Target item surface (we resolve overlapping targets by prioritizing the smaller surface)
-    ImGuiID                 DragDropAcceptIdCurr;               // Target item id (set at the time of accepting the payload)
-    ImGuiID                 DragDropAcceptIdPrev;               // Target item id from previous frame (we need to store this to allow for overlapping drag and drop targets)
-    int                     DragDropAcceptFrameCount;           // Last time a target expressed a desire to accept the source
-    ImGuiID                 DragDropHoldJustPressedId;          // Set when holding a payload just made ButtonBehavior() return a press.
-    ImVector<unsigned char> DragDropPayloadBufHeap;             // We don't expose the ImVector<> directly, ImGuiPayload only holds pointer+size
-    unsigned char           DragDropPayloadBufLocal[16];        // Local buffer for small payloads
 
     // Clipper
     int                             ClipperTempDataStacked;

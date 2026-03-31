@@ -417,31 +417,40 @@ static bool ImGui_ImplGlfw_ShouldChainCallback(ImGui_ImplGlfw_Data* bd, GLFWwind
     return bd->CallbacksChainForAllWindows ? true : (window == bd->Window);
 }
 
+ // Since 1.87
+void     ImGui_ImplGlfw_MouseButtonCallback_Context(ImGuiContext* ctx, GLFWwindow* window, int button, int action, int mods)
+{
+    ImGuiIO& io = ImGui::GetIO(ctx);
+    ImGui_ImplGlfw_UpdateKeyModifiers(io, window);
+    if (button >= 0 && button < ImGuiMouseButton_COUNT)
+        io.AddMouseButtonEvent(button, action == GLFW_PRESS);
+}
 void ImGui_ImplGlfw_MouseButtonCallback(GLFWwindow* window, int button, int action, int mods)
 {
     ImGui_ImplGlfw_Data* bd = ImGui_ImplGlfw_GetBackendData(window);
     if (bd->PrevUserCallbackMousebutton != nullptr && ImGui_ImplGlfw_ShouldChainCallback(bd, window))
         bd->PrevUserCallbackMousebutton(window, button, action, mods);
 
-    ImGuiIO& io = ImGui::GetIO(bd->Context);
-    ImGui_ImplGlfw_UpdateKeyModifiers(io, window);
-    if (button >= 0 && button < ImGuiMouseButton_COUNT)
-        io.AddMouseButtonEvent(button, action == GLFW_PRESS);
+    ImGui_ImplGlfw_MouseButtonCallback_Context(bd->Context, window, button, action, mods);
 }
 
+void     ImGui_ImplGlfw_ScrollCallback_Context(ImGuiContext* ctx, GLFWwindow* window, double xoffset, double yoffset)
+{
+#ifdef EMSCRIPTEN_USE_EMBEDDED_GLFW3
+    // Ignore GLFW events: will be processed in ImGui_ImplEmscripten_WheelCallback().
+    return;
+#endif
+
+    ImGuiIO& io = ImGui::GetIO(ctx);
+    io.AddMouseWheelEvent((float)xoffset, (float)yoffset);
+}
 void ImGui_ImplGlfw_ScrollCallback(GLFWwindow* window, double xoffset, double yoffset)
 {
     ImGui_ImplGlfw_Data* bd = ImGui_ImplGlfw_GetBackendData(window);
     if (bd->PrevUserCallbackScroll != nullptr && ImGui_ImplGlfw_ShouldChainCallback(bd, window))
         bd->PrevUserCallbackScroll(window, xoffset, yoffset);
 
-#ifdef EMSCRIPTEN_USE_EMBEDDED_GLFW3
-    // Ignore GLFW events: will be processed in ImGui_ImplEmscripten_WheelCallback().
-    return;
-#endif
-
-    ImGuiIO& io = ImGui::GetIO(bd->Context);
-    io.AddMouseWheelEvent((float)xoffset, (float)yoffset);
+    ImGui_ImplGlfw_ScrollCallback_Context(bd->Context, window, xoffset, yoffset);
 }
 
 // FIXME: should this be baked into ImGui_ImplGlfw_KeyToImGuiKey()? then what about the values passed to io.SetKeyEventNativeData()?
@@ -478,16 +487,12 @@ static int ImGui_ImplGlfw_TranslateUntranslatedKey(int key, int scancode)
     return key;
 }
 
-void ImGui_ImplGlfw_KeyCallback(GLFWwindow* window, int keycode, int scancode, int action, int mods)
+void     ImGui_ImplGlfw_KeyCallback_Context(ImGuiContext* ctx, GLFWwindow* window, int keycode, int scancode, int action, int mods)
 {
-    ImGui_ImplGlfw_Data* bd = ImGui_ImplGlfw_GetBackendData(window);
-    if (bd->PrevUserCallbackKey != nullptr && ImGui_ImplGlfw_ShouldChainCallback(bd, window))
-        bd->PrevUserCallbackKey(window, keycode, scancode, action, mods);
-
     if (action != GLFW_PRESS && action != GLFW_RELEASE)
         return;
 
-    ImGuiIO& io = ImGui::GetIO(bd->Context);
+    ImGuiIO& io = ImGui::GetIO(ctx);
     ImGui_ImplGlfw_UpdateKeyModifiers(io, window);
 
     keycode = ImGui_ImplGlfw_TranslateUntranslatedKey(keycode, scancode);
@@ -496,37 +501,49 @@ void ImGui_ImplGlfw_KeyCallback(GLFWwindow* window, int keycode, int scancode, i
     io.AddKeyEvent(imgui_key, (action == GLFW_PRESS));
     io.SetKeyEventNativeData(imgui_key, keycode, scancode); // To support legacy indexing (<1.87 user code)
 }
+void ImGui_ImplGlfw_KeyCallback(GLFWwindow* window, int keycode, int scancode, int action, int mods)
+{
+    ImGui_ImplGlfw_Data* bd = ImGui_ImplGlfw_GetBackendData(window);
+    if (bd->PrevUserCallbackKey != nullptr && ImGui_ImplGlfw_ShouldChainCallback(bd, window))
+        bd->PrevUserCallbackKey(window, keycode, scancode, action, mods);
 
+    ImGui_ImplGlfw_KeyCallback_Context(bd->Context, window, keycode, scancode, action, mods);
+}
+
+void     ImGui_ImplGlfw_WindowFocusCallback_Context(ImGuiContext* ctx, GLFWwindow* window, int focused)
+{
+    ImGuiIO& io = ImGui::GetIO(ctx);
+    io.AddFocusEvent(focused != 0);
+}
 void ImGui_ImplGlfw_WindowFocusCallback(GLFWwindow* window, int focused)
 {
     ImGui_ImplGlfw_Data* bd = ImGui_ImplGlfw_GetBackendData(window);
     if (bd->PrevUserCallbackWindowFocus != nullptr && ImGui_ImplGlfw_ShouldChainCallback(bd, window))
         bd->PrevUserCallbackWindowFocus(window, focused);
 
-    ImGuiIO& io = ImGui::GetIO(bd->Context);
-    io.AddFocusEvent(focused != 0);
+    ImGui_ImplGlfw_WindowFocusCallback_Context(bd->Context, window, focused);
 }
 
+void     ImGui_ImplGlfw_CursorPosCallback_Context(ImGuiContext* ctx, GLFWwindow* window, double x, double y)
+{
+    ImGuiIO& io = ImGui::GetIO(ctx);
+    io.AddMousePosEvent((float)x, (float)y);
+    ImGui_ImplGlfw_Data* bd = ImGui_ImplGlfw_GetBackendData(window);
+    bd->LastValidMousePos = ImVec2((float)x, (float)y);
+}
 void ImGui_ImplGlfw_CursorPosCallback(GLFWwindow* window, double x, double y)
 {
     ImGui_ImplGlfw_Data* bd = ImGui_ImplGlfw_GetBackendData(window);
     if (bd->PrevUserCallbackCursorPos != nullptr && ImGui_ImplGlfw_ShouldChainCallback(bd, window))
         bd->PrevUserCallbackCursorPos(window, x, y);
 
-    ImGuiIO& io = ImGui::GetIO(bd->Context);
-    io.AddMousePosEvent((float)x, (float)y);
-    bd->LastValidMousePos = ImVec2((float)x, (float)y);
+    ImGui_ImplGlfw_CursorPosCallback_Context(bd->Context, window, x, y);
 }
 
-// Workaround: X11 seems to send spurious Leave/Enter events which would make us lose our position,
-// so we back it up and restore on Leave/Enter (see https://github.com/ocornut/imgui/issues/4984)
-void ImGui_ImplGlfw_CursorEnterCallback(GLFWwindow* window, int entered)
+void     ImGui_ImplGlfw_CursorEnterCallback_Context(ImGuiContext* ctx, GLFWwindow* window, int entered)
 {
+    ImGuiIO& io = ImGui::GetIO(ctx);
     ImGui_ImplGlfw_Data* bd = ImGui_ImplGlfw_GetBackendData(window);
-    if (bd->PrevUserCallbackCursorEnter != nullptr && ImGui_ImplGlfw_ShouldChainCallback(bd, window))
-        bd->PrevUserCallbackCursorEnter(window, entered);
-
-    ImGuiIO& io = ImGui::GetIO(bd->Context);
     if (entered)
     {
         bd->MouseWindow = window;
@@ -539,15 +556,30 @@ void ImGui_ImplGlfw_CursorEnterCallback(GLFWwindow* window, int entered)
         io.AddMousePosEvent(-FLT_MAX, -FLT_MAX);
     }
 }
+// Workaround: X11 seems to send spurious Leave/Enter events which would make us lose our position,
+// so we back it up and restore on Leave/Enter (see https://github.com/ocornut/imgui/issues/4984)
+void ImGui_ImplGlfw_CursorEnterCallback(GLFWwindow* window, int entered)
+{
+    ImGui_ImplGlfw_Data* bd = ImGui_ImplGlfw_GetBackendData(window);
+    if (bd->PrevUserCallbackCursorEnter != nullptr && ImGui_ImplGlfw_ShouldChainCallback(bd, window))
+        bd->PrevUserCallbackCursorEnter(window, entered);
 
+    ImGui_ImplGlfw_CursorEnterCallback_Context(bd->Context, window, entered);
+}
+
+void     ImGui_ImplGlfw_CharCallback_Context(ImGuiContext* ctx, GLFWwindow* window, unsigned int c)
+{
+
+    ImGuiIO& io = ImGui::GetIO(ctx);
+    io.AddInputCharacter(c);
+}
 void ImGui_ImplGlfw_CharCallback(GLFWwindow* window, unsigned int c)
 {
     ImGui_ImplGlfw_Data* bd = ImGui_ImplGlfw_GetBackendData(window);
     if (bd->PrevUserCallbackChar != nullptr && ImGui_ImplGlfw_ShouldChainCallback(bd, window))
         bd->PrevUserCallbackChar(window, c);
 
-    ImGuiIO& io = ImGui::GetIO(bd->Context);
-    io.AddInputCharacter(c);
+    ImGui_ImplGlfw_CharCallback_Context(bd->Context, window, c);
 }
 
 void ImGui_ImplGlfw_MonitorCallback(GLFWmonitor*, int)

@@ -1269,7 +1269,7 @@ void ImGui::TableUpdateLayout(ImGuiTable* table)
     if (table->IsContextPopupOpen && table->ContextPopupColumn != -1 && table->InstanceInteracted == table->InstanceCurrent)
         table->HighlightColumnHeader = table->ContextPopupColumn;
     else if ((table->Flags & ImGuiTableFlags_HighlightHoveredColumn) && table->HoveredColumnBody != -1 && table->HoveredColumnBody != table->ColumnsCount && table->HoveredColumnBorder == -1)
-        if (g.ActiveId == 0 || (table->IsActiveIdInTable || g.DragDropActive))
+        if (g.ActiveId == 0 || (table->IsActiveIdInTable || dd_ctx->DragDropActive))
             table->HighlightColumnHeader = table->HoveredColumnBody;
 
     // [Part 11] Default context menu
@@ -3230,7 +3230,7 @@ void ImGui::TableHeader(const char* label)
 
     // Drag and drop to re-order columns.
     // FIXME-TABLE: Scroll request while reordering a column and it lands out of the scrolling zone.
-    if (held && (table->Flags & ImGuiTableFlags_Reorderable) && IsMouseDragging(0) && !g.DragDropActive)
+    if (held && (table->Flags & ImGuiTableFlags_Reorderable) && IsMouseDragging(0) && !dd_ctx->DragDropActive)
     {
         // - While moving a column it will jump on the other side of the mouse, so we also test for MouseDelta.x
         // - We need to handle reordering across hidden columns.
@@ -3302,7 +3302,7 @@ void ImGui::TableAngledHeadersRow()
     ImGuiTableInstanceData* table_instance = TableGetInstanceData(table, table->InstanceCurrent);
     int highlight_column_n = table->HighlightColumnHeader;
     if (highlight_column_n == -1 && table->HoveredColumnBody != -1)
-        if (table_instance->HoveredRowLast == 0 && table->HoveredColumnBorder == -1 && (g.ActiveId == 0 || g.ActiveId == row_id || (table->IsActiveIdInTable || g.DragDropActive)))
+        if (table_instance->HoveredRowLast == 0 && table->HoveredColumnBorder == -1 && (g.ActiveId == 0 || g.ActiveId == row_id || (table->IsActiveIdInTable || dd_ctx->DragDropActive)))
             highlight_column_n = table->HoveredColumnBody;
 
     // Build up request
